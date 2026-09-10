@@ -33,6 +33,8 @@ No install needed. The only CDN is `@supabase/supabase-js@2` (app still works of
 
 ## ☁️ Connect Supabase (5 min)
 
+**Status: ✅ LIVE** — project `ogmxvnpwhslafjatxrhg` (ap-southeast-2) wired via Composio: `notes` table + RLS + realtime applied, anon key baked into `config.js`, signup open with autoconfirm. Cloud sign-in works out of the box — steps below only if you ever re-provision.
+
 1. Go to **supabase.com → New project** (free).
 2. **SQL Editor → New query** → paste `supabase-schema.sql` → Run.
 3. (Optional, for live multi-device sync) **Database → Replication →** enable `notes` table, or run the commented `alter publication …` line.
