@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CloudPad — Notes on Cloud</title>
+  <meta name="description" content="CloudPad: fast, private notes synced to the cloud with Supabase. Deploy anywhere, including GitHub Pages." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%236366f1'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>C</text></svg>" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div id="app">
+    <!-- ============ SIDEBAR ============ -->
+    <aside id="sidebar">
+      <div class="brand">
+        <div class="brand-logo">C</div>
+        <div>
+          <h1>CloudPad</h1>
+          <p id="sync-status" class="sync-status local"><span class="dot"></span><span id="sync-text">Local demo</span></p>
+        </div>
+        <button id="sidebar-close" class="icon-btn only-mobile" title="Close">✕</button>
+      </div>
+
+      <button id="new-note-btn" class="btn primary block">＋ New note</button>
+
+      <div class="search-box">
+        <span class="search-icon">⌕</span>
+        <input id="search-input" type="text" placeholder="Search notes…  ( / )" autocomplete="off" />
+      </div>
+
+      <nav class="filters">
+        <button class="filter active" data-filter="all">📝 All notes <span class="count" id="count-all">0</span></button>
+        <button class="filter" data-filter="pinned">📌 Pinned <span class="count" id="count-pinned">0</span></button>
+        <button class="filter" data-filter="archived">📦 Archived <span class="count" id="count-archived">0</span></button>
+        <button class="filter" data-filter="trash">🗑 Trash <span class="count" id="count-trash">0</span></button>
+      </nav>
+
+      <div class="tags-section">
+        <div class="tags-header">TAGS <button id="clear-tag" class="link-btn" hidden>clear</button></div>
+        <div id="tags-list" class="tags-list"><span class="muted small">No tags yet</span></div>
+      </div>
+
+      <div id="notes-list" class="notes-list"></div>
+
+      <div class="sidebar-footer">
+        <div id="user-chip" class="user-chip">
+          <div class="avatar">👤</div>
+          <div class="user-meta"><strong id="user-email">Not signed in</strong><small id="user-plan">Local mode</small></div>
+        </div>
+        <div class="footer-btns">
+          <button id="auth-btn" class="btn small">Sign in</button>
+          <button id="settings-btn" class="btn small ghost" title="Settings">⚙</button>
+          <button id="theme-btn" class="btn small ghost" title="Toggle theme">🌙</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ============ EDITOR ============ -->
+    <main id="editor-pane">
+      <div class="mobile-bar only-mobile">
+        <button id="sidebar-open" class="icon-btn">☰</button>
+        <strong>CloudPad</strong>
+        <button id="mobile-new" class="icon-btn">＋</button>
+      </div>
+
+      <div id="editor-empty" class="editor-empty">
+        <div class="empty-art">📓</div>
+        <h2>No note selected</h2>
+        <p>Pick a note from the sidebar, or create a new one to start writing.<br />Notes save automatically.</p>
+        <button class="btn primary" onclick="document.getElementById('new-note-btn').click()">＋ New note</button>
+        <div class="setup-hint" id="setup-hint">
+          <strong>☁️ Want cloud sync?</strong> Open <b>⚙ Settings</b> → paste your Supabase URL + anon key → Sign in.
+          <a href="https://github.com" target="_blank" rel="noopener" id="readme-link">Setup guide in README.md</a>
+        </div>
+      </div>
+
+      <div id="editor" class="editor" hidden>
+        <div class="editor-top">
+          <input id="note-title" type="text" placeholder="Untitled" autocomplete="off" />
+          <div class="editor-actions">
+            <span id="save-state" class="save-state">Saved</span>
+            <button id="pin-btn" class="icon-btn" title="Pin">📌</button>
+            <button id="archive-btn" class="icon-btn" title="Archive">📦</button>
+            <button id="export-btn" class="icon-btn" title="Export .md">⤓</button>
+            <button id="copy-btn" class="icon-btn" title="Copy">⧉</button>
+            <button id="github-backup-btn" class="icon-btn" title="Backup to GitHub">🐙</button>
+            <button id="delete-btn" class="icon-btn danger" title="Delete">🗑</button>
+          </div>
+        </div>
+
+        <div class="editor-meta">
+          <input id="note-tags" type="text" placeholder="#tags  comma-separated, e.g. ideas, work" autocomplete="off" />
+          <span id="word-count" class="muted small">0 words</span>
+          <span id="updated-at" class="muted small"></span>
+        </div>
+
+        <div class="toolbar">
+          <button data-md="**" title="Bold">B</button>
+          <button data-md="*" title="Italic"><i>I</i></button>
+          <button data-md="## " data-line="1" title="Heading">H</button>
+          <button data-md="- " data-line="1" title="Bullet list">• List</button>
+          <button data-md="1. " data-line="1" title="Numbered list">1. List</button>
+          <button data-md="[]()" data-link="1" title="Link">🔗</button>
+          <button data-md="`" title="Code">‹/›</button>
+          <button data-md="```" data-block="1" title="Code block">```</button>
+          <button data-md="> " data-line="1" title="Quote">❝</button>
+          <button data-md="- [ ] " data-line="1" title="Task">☑</button>
+          <span class="spacer"></span>
+          <button id="preview-toggle" title="Toggle preview">👁 Preview</button>
+        </div>
+
+        <div class="editor-body">
+          <textarea id="note-content" placeholder="Start writing…  (Markdown supported)" spellcheck="true"></textarea>
+          <div id="note-preview" class="markdown-preview" hidden></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ============ SETTINGS MODAL ============ -->
+  <div id="settings-modal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head"><h3>⚙ Settings</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="modal-body">
+        <h4>☁️ Supabase (cloud sync)</h4>
+        <label>Project URL<input id="cfg-url" type="text" placeholder="https://xyzcompany.supabase.co" /></label>
+        <label>Anon public key<input id="cfg-key" type="password" placeholder="eyJhbGciOi…" /></label>
+        <div class="row">
+          <button id="cfg-save" class="btn primary small">Connect Supabase</button>
+          <button id="cfg-disconnect" class="btn small ghost">Disconnect</button>
+          <span id="cfg-status" class="muted small"></span>
+        </div>
+        <p class="muted small">Create a free project at supabase.com → run <code>supabase-schema.sql</code> in the SQL editor → paste URL + anon key here. Keys stay in your browser (localStorage) only.</p>
+
+        <hr />
+        <h4>🐙 GitHub backup (via Composio)</h4>
+        <label>Edge Function URL<input id="cfg-edge-url" type="text" placeholder="https://xyzcompany.supabase.co/functions/v1/github-backup" /></label>
+        <div class="row">
+          <button id="backup-save" class="btn small">Save backup settings</button>
+        </div>
+        <p class="muted small">Deploy <code>supabase/functions/github-backup</code>, set its secrets, paste the URL here — then hit 🐙 on any note. See README.</p>
+
+        <hr />
+        <h4>🔌 Composio integrations <span class="pill">Phase 2</span></h4>
+        <p class="muted small">In phase 2 we wire these via Composio (managed OAuth, no per-app code): auto-backup notes, share via Gmail/Slack, sync to Notion/Google Drive, GitHub commit per note.</p>
+        <div class="connect-grid">
+          <button class="connect-btn" data-app="gmail" disabled>📧 Gmail <small>soon</small></button>
+          <button class="connect-btn" data-app="notion" disabled>📘 Notion <small>soon</small></button>
+          <button class="connect-btn" data-app="googledrive" disabled>💾 Drive <small>soon</small></button>
+          <button class="connect-btn" data-app="slack" disabled>💬 Slack <small>soon</small></button>
+          <button class="connect-btn" data-app="github" disabled>🐙 GitHub <small>soon</small></button>
+          <button class="connect-btn" data-app="linear" disabled>📋 Linear <small>soon</small></button>
+        </div>
+        <label>Composio API key (for phase 2)<input id="cfg-composio" type="password" placeholder="Stored locally, used later" /></label>
+
+        <hr />
+        <h4>🗂 Data</h4>
+        <div class="row">
+          <button id="export-all" class="btn small">Export all (.json)</button>
+          <button id="import-btn" class="btn small ghost">Import (.json)</button>
+          <input id="import-file" type="file" accept=".json" hidden />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ AUTH MODAL ============ -->
+  <div id="auth-modal" class="modal" hidden>
+    <div class="modal-card small">
+      <div class="modal-head"><h3>🔐 Sign in</h3><button class="icon-btn" data-close>✕</button></div>
+      <div class="modal-body">
+        <p class="muted small" id="auth-hint">Sign in with your Supabase account to sync notes to the cloud.</p>
+        <label>Email<input id="auth-email" type="email" placeholder="you@example.com" /></label>
+        <label>Password<input id="auth-password" type="password" placeholder="••••••••" /></label>
+        <div class="row">
+          <button id="signin-btn" class="btn primary small">Sign in</button>
+          <button id="signup-btn" class="btn small">Sign up</button>
+        </div>
+        <div class="row"><button id="magic-btn" class="btn small ghost block">✨ Email me a magic link instead</button></div>
+        <p id="auth-error" class="error small"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CONFIRM MODAL ============ -->
+  <div id="confirm-modal" class="modal" hidden>
+    <div class="modal-card small">
+      <div class="modal-head"><h3 id="confirm-title">Are you sure?</h3></div>
+      <div class="modal-body">
+        <p id="confirm-msg" class="muted"></p>
+        <div class="row end"><button id="confirm-no" class="btn small ghost">Cancel</button><button id="confirm-yes" class="btn small danger">Delete</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+  <script>if('serviceWorker' in navigator){/* offline cache optional, skipped for Pages simplicity */}</script>
+</body>
+</html>
