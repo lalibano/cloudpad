@@ -1,7 +1,7 @@
 /* CloudPad deployment config — PUBLIC-SAFE values only.
-   Fill these in and redeploy to let visitors sign in without pasting keys.
-   SUPABASE_ANON_KEY is safe to expose when RLS is on. NEVER put service-role keys here. */
+   Connected via Composio to Supabase project ogmxvnpwhslafjatxrhg (2026-09-10).
+   Anon key is safe to expose with RLS on. NEVER put service-role keys here. */
 window.CLOUDPAD_CONFIG = {
-  SUPABASE_URL: "",
-  SUPABASE_ANON_KEY: ""
+  SUPABASE_URL: "https://ogmxvnpwhslafjatxrhg.supabase.co",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9nbXh2bnB3aHNsYWZqYXR4cmhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNTIzNDQsImV4cCI6MjEwNDYyODM0NH0.RADlvj8PWR9bOGzAvT3LUuMKeQ3B6uzy9waYRFdXn64"
 };
