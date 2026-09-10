@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="styles.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%236366f1'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>C</text></svg>" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="config.js"></script>
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -171,14 +172,27 @@
     <div class="modal-card small">
       <div class="modal-head"><h3>🔐 Sign in</h3><button class="icon-btn" data-close>✕</button></div>
       <div class="modal-body">
-        <p class="muted small" id="auth-hint">Sign in with your Supabase account to sync notes to the cloud.</p>
+        <div class="row auth-tabs">
+          <button id="tab-demo" class="btn small primary">📱 Demo account</button>
+          <button id="tab-cloud" class="btn small ghost">☁️ Cloud (Supabase)</button>
+        </div>
+        <p class="muted small" id="auth-hint">Demo account: instant sign up, stored only in this browser on this device.</p>
+        <label id="auth-name-wrap">Name (for new demo accounts)<input id="auth-name" type="text" placeholder="Your name" /></label>
         <label>Email<input id="auth-email" type="email" placeholder="you@example.com" /></label>
         <label>Password<input id="auth-password" type="password" placeholder="••••••••" /></label>
-        <div class="row">
-          <button id="signin-btn" class="btn primary small">Sign in</button>
-          <button id="signup-btn" class="btn small">Sign up</button>
+        <div id="auth-demo-btns">
+          <div class="row">
+            <button id="demo-signin-btn" class="btn primary small">Sign in</button>
+            <button id="demo-signup-btn" class="btn small">Create demo account</button>
+          </div>
         </div>
-        <div class="row"><button id="magic-btn" class="btn small ghost block">✨ Email me a magic link instead</button></div>
+        <div id="auth-cloud-btns" hidden>
+          <div class="row">
+            <button id="signin-btn" class="btn primary small">Sign in</button>
+            <button id="signup-btn" class="btn small">Sign up</button>
+          </div>
+          <div class="row"><button id="magic-btn" class="btn small ghost block">✨ Email me a magic link instead</button></div>
+        </div>
         <p id="auth-error" class="error small"></p>
       </div>
     </div>
