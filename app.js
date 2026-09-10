@@ -44,6 +44,7 @@ function seedDemoStore(id, name) {
 }
 async function doDemoAuth(mode) {
   authErr("");
+  if (!window.crypto?.subtle || !window.crypto?.randomUUID) return authErr("This browser blocked secure crypto (private mode?). Try a normal tab or Chrome.");
   const email = ($("auth-email").value || "").trim().toLowerCase();
   const password = $("auth-password").value || "";
   const name = ($("auth-name").value || "").trim();
@@ -98,6 +99,17 @@ function toggleSidebar(open) {
   if (open === undefined) sb.classList.toggle("open");
   else sb.classList.toggle("open", !!open);
 }
+
+// Surface unexpected failures as toasts (throttled) so nothing ever "silently does nothing".
+let lastErrToast = 0;
+function surfaceError(msg) {
+  const now = Date.now();
+  if (now - lastErrToast < 3000) return;
+  lastErrToast = now;
+  try { toast("⚠ " + String(msg).slice(0, 140), "err"); } catch (_) {}
+}
+window.addEventListener("error", (e) => { if ((e.filename || "").includes("app.js")) surfaceError(e.message || "Script error"); });
+window.addEventListener("unhandledrejection", (e) => { const r = e.reason; surfaceError((r && r.message) || r || "Request failed"); });
 
 function toast(msg, type = "") {
   const el = document.createElement("div");
@@ -184,16 +196,60 @@ function getCfg() {
     key: stored.key || DEPLOY_CFG.SUPABASE_ANON_KEY || "",
   };
 }
-function initSupabaseFromStorage() {
-  const { url, key } = getCfg();
-  if (url && key && window.supabase) {
+// Load the Supabase JS library dynamically with a timeout, so a slow/blocked
+// CDN can NEVER prevent the app from booting (menu, signup, notes work offline-first).
+let supabaseLibState = "idle"; // idle | loading | ready | failed
+let authListenerWired = false;
+function loadSupabaseLib(timeoutMs = 9000) {
+  return new Promise((resolve) => {
+    if (window.supabase) { supabaseLibState = "ready"; return resolve(true); }
+    if (supabaseLibState === "loading") {
+      const t0 = Date.now();
+      const iv = setInterval(() => {
+        if (window.supabase || supabaseLibState !== "loading" || Date.now() - t0 > timeoutMs) {
+          clearInterval(iv); resolve(!!window.supabase);
+        }
+      }, 200);
+      return;
+    }
+    supabaseLibState = "loading";
+    let done = false;
+    const finish = (ok) => { if (done) return; done = true; supabaseLibState = ok ? "ready" : "failed"; resolve(ok); };
     try {
-      supabase = window.supabase.createClient(url, key);
-      return true;
-    } catch (e) { console.warn("supabase init failed", e); }
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+      s.async = true;
+      s.onload = () => finish(!!window.supabase);
+      s.onerror = () => finish(false);
+      document.head.appendChild(s);
+    } catch (e) { finish(false); return; }
+    setTimeout(() => finish(!!window.supabase), timeoutMs);
+  });
+}
+async function ensureSupabaseClient() {
+  const { url, key } = getCfg();
+  if (!url || !key) { supabase = null; return false; }
+  if (supabase) return true;
+  const ok = await loadSupabaseLib();
+  if (!ok || !window.supabase) { supabase = null; return false; }
+  try { supabase = window.supabase.createClient(url, key); return true; }
+  catch (e) { console.warn("supabase init failed", e); supabase = null; return false; }
+}
+// Fire-and-forget cloud upgrade after instant local boot.
+async function upgradeToCloud() {
+  if (!(await ensureSupabaseClient())) { setSyncUI(); return; }
+  if (!authListenerWired && supabase?.auth?.onAuthStateChange) {
+    authListenerWired = true;
+    supabase.auth.onAuthStateChange(async (_ev, session) => {
+      sessionUser = session?.user || null;
+      cloudMode = !!sessionUser;
+      setSyncUI(); subscribeRealtime();
+      await fetchNotes(); renderAll(); renderEditor();
+    });
   }
-  supabase = null;
-  return false;
+  try { await refreshSession(); } catch (e) { console.warn(e); }
+  setSyncUI();
+  await fetchNotes(); renderAll(); renderEditor();
 }
 function setSyncUI() {
   const badge = $("sync-status");
@@ -507,8 +563,9 @@ function bindModals() {
     const url = $("cfg-url").value.trim().replace(/\/$/, ""), key = $("cfg-key").value.trim();
     if (!url || !key) return toast("Paste both URL and anon key", "err");
     localStorage.setItem(LS_CFG, JSON.stringify({ url, key }));
-    if (!window.supabase) return toast("Supabase CDN not loaded (offline?) — check connection", "err");
-    supabase = window.supabase.createClient(url, key);
+    toast("Connecting to Supabase…");
+    const ok = await ensureSupabaseClient();
+    if (!ok) { $("cfg-status").textContent = "○ Library failed to load — check connection, retry"; return toast("Couldn't load Supabase library (network?). Keys saved — retry.", "err"); }
     $("cfg-status").textContent = "● Connected — sign in now";
     toast("Supabase connected! Now sign in.", "ok");
     await refreshSession(); await fetchNotes(); renderAll(); renderEditor();
@@ -602,6 +659,7 @@ function bindModals() {
 function authErr(m) { $("auth-error").textContent = m; }
 async function doAuth(mode) {
   authErr("");
+  if (!supabase) return authErr("Cloud library still loading or blocked — wait a moment and retry.");
   const email = $("auth-email").value.trim(), password = $("auth-password").value;
   if (!email || !password) return authErr("Email + password required.");
   const fn = mode === "signup" ? supabase.auth.signUp({ email, password }) : supabase.auth.signInWithPassword({ email, password });
@@ -661,20 +719,11 @@ async function doGithubBackup() {
   demoUser = loadDemoSession();
   seedLocalIfEmpty();
   bindSidebar(); bindEditor(); bindModals(); bindBackup();
-  const hasSupabase = initSupabaseFromStorage();
-  if (hasSupabase) {
-    try { await refreshSession(); } catch (e) { console.warn(e); }
-    supabase.auth.onAuthStateChange(async (_ev, session) => {
-      sessionUser = session?.user || null;
-      cloudMode = !!sessionUser;
-      setSyncUI(); subscribeRealtime();
-      await fetchNotes(); renderAll(); renderEditor();
-    });
-  }
   setSyncUI();
-  await fetchNotes();
+  await fetchNotes(); // local first: instant, works even if network/CDN is down
   // open first note on desktop
   if (window.innerWidth > 900 && filteredNotes().length) activeId = filteredNotes()[0].id;
   if (window.innerWidth <= 900 && !activeId) toggleSidebar(true); // mobile: start on notes list
   renderAll(); renderEditor();
+  upgradeToCloud(); // fire-and-forget: library loads w/ timeout, then cloud session+notes
 })();
