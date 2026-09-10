@@ -137,3 +137,8 @@ hr{border:none;border-top:1px solid var(--line);width:100%}
   .mobile-bar.only-mobile{display:flex}
   #note-title{font-size:20px}
 }
+#sidebar-overlay{display:none}
+@media(max-width:900px){
+  #sidebar.open + #sidebar-overlay{display:block;position:fixed;inset:0;background:rgba(10,12,30,.45);z-index:30}
+  .menu-btn{font-size:15px;font-weight:600}
+}
