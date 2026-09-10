@@ -1,5 +1,7 @@
 # ☁️ CloudPad — Notes on Cloud
 
+**🌐 Live site:** https://lalibano.github.io/cloudpad/
+
 A fast, private, full-stack notepad:
 
 - **Frontend:** pure static HTML/CSS/JS → deploy free on **GitHub Pages** (no build step)
