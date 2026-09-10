@@ -9,16 +9,80 @@ const LS_CFG = "cloudpad_supabase_cfg";
 const LS_LOCAL_NOTES = "cloudpad_notes_demo";
 const LS_THEME = "cloudpad_theme";
 const LS_COMPOSIO = "cloudpad_composio_key";
+const LS_DEMO_USERS = "cloudpad_demo_users";
+const LS_DEMO_SESSION = "cloudpad_demo_session";
+const DEPLOY_CFG = (typeof window !== "undefined" && window.CLOUDPAD_CONFIG) || {};
 
 let supabase = null;      // supabase client (from CDN global)
 let sessionUser = null;   // logged-in user or null
 let cloudMode = false;
+let demoUser = null;      // { id, email, name } when using a demo (device-only) account
 let notes = [];           // active dataset
 let activeId = null;
 let activeFilter = "all";
 let activeTag = null;
 let saveTimer = null;
 let realtimeChannel = null;
+
+// ---------- demo accounts (device-only, no server) ----------
+async function sha256Hex(str) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function getDemoUsers() { try { return JSON.parse(localStorage.getItem(LS_DEMO_USERS) || "{}"); } catch { return {}; } }
+function saveDemoUsers(u) { localStorage.setItem(LS_DEMO_USERS, JSON.stringify(u)); }
+function loadDemoSession() { try { return JSON.parse(localStorage.getItem(LS_DEMO_SESSION) || "null"); } catch { return null; } }
+function demoNotesKey(id) { return `${LS_LOCAL_NOTES}_user_${id}`; }
+function localNotesKey() { return demoUser ? demoNotesKey(demoUser.id) : LS_LOCAL_NOTES; }
+function seedDemoStore(id, name) {
+  const key = demoNotesKey(id);
+  if (localStorage.getItem(key)) return;
+  const t = new Date().toISOString();
+  localStorage.setItem(key, JSON.stringify([
+    { id: uid(), user_id: null, title: `👋 Welcome, ${name}!`, content: "# Your demo account is ready\n\n- This account lives **only in this browser** on this device.\n- Your notes are kept separate from anonymous local notes.\n- For real cloud sync across devices, use the **☁️ Cloud (Supabase)** tab to sign in.\n", tags: ["welcome"], pinned: true, archived: false, deleted_at: null, created_at: t, updated_at: t },
+  ]));
+}
+async function doDemoAuth(mode) {
+  authErr("");
+  const email = ($("auth-email").value || "").trim().toLowerCase();
+  const password = $("auth-password").value || "";
+  const name = ($("auth-name").value || "").trim();
+  if (!email || !password) return authErr("Email + password required.");
+  if (password.length < 4) return authErr("Password must be at least 4 characters.");
+  const users = getDemoUsers();
+  if (mode === "signup") {
+    if (users[email]) return authErr("Demo account already exists — sign in instead.");
+    const salt = uid(), id = uid();
+    users[email] = { id, email, name: name || email.split("@")[0], salt, passHash: await sha256Hex(salt + "::" + password) };
+    saveDemoUsers(users);
+    enterDemoSession(users[email], true);
+    $("auth-modal").hidden = true;
+    toast("Demo account created! (stored on this device only)", "ok");
+  } else {
+    const u = users[email];
+    if (!u) return authErr("No demo account with this email — create one first.");
+    if ((await sha256Hex(u.salt + "::" + password)) !== u.passHash) return authErr("Wrong password.");
+    enterDemoSession(u, false);
+    $("auth-modal").hidden = true;
+    toast(`Welcome back, ${u.name}!`, "ok");
+  }
+}
+function enterDemoSession(u, isNew) {
+  demoUser = { id: u.id, email: u.email, name: u.name };
+  localStorage.setItem(LS_DEMO_SESSION, JSON.stringify(demoUser));
+  if (isNew) seedDemoStore(u.id, u.name);
+  notes = loadLocal();
+  activeId = null; activeFilter = "all"; activeTag = null;
+  if (filteredNotes().length) activeId = filteredNotes()[0].id;
+  setSyncUI(); renderAll(); renderEditor();
+}
+function exitDemoSession() {
+  demoUser = null;
+  localStorage.removeItem(LS_DEMO_SESSION);
+  notes = loadLocal();
+  activeId = null; activeFilter = "all"; activeTag = null;
+  setSyncUI(); renderAll(); renderEditor();
+}
 
 // ---------- utils ----------
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(16).slice(2));
@@ -84,11 +148,11 @@ $("theme-btn").onclick = () => {
 
 // ---------- local store ----------
 function loadLocal() {
-  try { return JSON.parse(localStorage.getItem(LS_LOCAL_NOTES) || "[]"); }
+  try { return JSON.parse(localStorage.getItem(localNotesKey()) || "[]"); }
   catch { return []; }
 }
 function saveLocal() {
-  localStorage.setItem(LS_LOCAL_NOTES, JSON.stringify(notes));
+  localStorage.setItem(localNotesKey(), JSON.stringify(notes));
 }
 function seedLocalIfEmpty() {
   if (loadLocal().length === 0 && !localStorage.getItem(LS_LOCAL_NOTES + "_seeded")) {
@@ -104,7 +168,12 @@ function seedLocalIfEmpty() {
 
 // ---------- supabase ----------
 function getCfg() {
-  try { return JSON.parse(localStorage.getItem(LS_CFG) || "{}"); } catch { return {}; }
+  let stored = {};
+  try { stored = JSON.parse(localStorage.getItem(LS_CFG) || "{}"); } catch { stored = {}; }
+  return {
+    url: stored.url || DEPLOY_CFG.SUPABASE_URL || "",
+    key: stored.key || DEPLOY_CFG.SUPABASE_ANON_KEY || "",
+  };
 }
 function initSupabaseFromStorage() {
   const { url, key } = getCfg();
@@ -126,6 +195,13 @@ function setSyncUI() {
     $("user-plan").textContent = "Supabase cloud";
     $("auth-btn").textContent = "Sign out";
     $("setup-hint").style.display = "none";
+  } else if (demoUser) {
+    badge.classList.remove("cloud");
+    $("sync-text").textContent = "Demo profile • this device";
+    $("user-email").textContent = demoUser.email;
+    $("user-plan").textContent = `Demo — ${demoUser.name}`;
+    $("auth-btn").textContent = "Sign out";
+    $("setup-hint").style.display = "";
   } else if (supabase) {
     badge.classList.remove("cloud");
     $("sync-text").textContent = "Supabase connected — sign in";
@@ -424,22 +500,44 @@ function bindModals() {
     toast("Composio key saved locally for phase 2", "ok");
   });
 
+  const setAuthTab = (which) => {
+    const demo = which === "demo";
+    $("tab-demo").className = "btn small" + (demo ? " primary" : " ghost");
+    $("tab-cloud").className = "btn small" + (!demo ? " primary" : " ghost");
+    $("auth-demo-btns").hidden = !demo;
+    $("auth-cloud-btns").hidden = demo;
+    $("auth-name-wrap").style.display = demo ? "" : "none";
+    $("auth-hint").textContent = demo
+      ? "Demo account: instant sign up, stored only in this browser on this device."
+      : "Cloud account: real sign in with Supabase — notes sync across all your devices.";
+    authErr("");
+  };
+  $("tab-demo").onclick = () => setAuthTab("demo");
+  $("tab-cloud").onclick = () => setAuthTab("cloud");
   $("auth-btn").onclick = async () => {
     if (sessionUser && supabase) {
       await supabase.auth.signOut();
       sessionUser = null; cloudMode = false; notes = loadLocal(); activeId = null;
       setSyncUI(); renderAll(); renderEditor(); toast("Signed out");
+    } else if (demoUser) {
+      exitDemoSession(); toast("Signed out of demo account");
     } else {
-      if (!supabase) {
-        toast("Connect Supabase first (⚙ Settings)", "err");
-        $("settings-btn").click(); return;
-      }
+      authErr(""); setAuthTab("demo");
       $("auth-modal").hidden = false;
     }
   };
-  $("signin-btn").onclick = () => doAuth("signin");
-  $("signup-btn").onclick = () => doAuth("signup");
+  $("demo-signin-btn").onclick = () => doDemoAuth("signin");
+  $("demo-signup-btn").onclick = () => doDemoAuth("signup");
+  $("signin-btn").onclick = () => {
+    if (!supabase) { authErr("No Supabase connected. Add URL + key in ⚙ Settings (or ask admin to configure deploy defaults)."); return; }
+    doAuth("signin");
+  };
+  $("signup-btn").onclick = () => {
+    if (!supabase) { authErr("No Supabase connected. Add URL + key in ⚙ Settings (or ask admin to configure deploy defaults)."); return; }
+    doAuth("signup");
+  };
   $("magic-btn").onclick = async () => {
+    if (!supabase) return authErr("No Supabase connected — see ⚙ Settings.");
     const email = $("auth-email").value.trim();
     if (!email) return authErr("Enter your email first.");
     const { error } = await supabase.auth.signInWithOtp({ email });
@@ -532,6 +630,7 @@ async function doGithubBackup() {
 // ---------- boot ----------
 (async function boot() {
   initTheme();
+  demoUser = loadDemoSession();
   seedLocalIfEmpty();
   bindSidebar(); bindEditor(); bindModals(); bindBackup();
   const hasSupabase = initSupabaseFromStorage();
