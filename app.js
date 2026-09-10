@@ -90,6 +90,15 @@ const nowISO = () => new Date().toISOString();
 const esc = (s = "") => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const debounce = (fn, ms) => (...a) => { clearTimeout(saveTimer); saveTimer = setTimeout(() => fn(...a), ms); };
 
+// Global sidebar toggle — also called by inline onclick as a fallback,
+// so the menu works even if event bindings fail to attach.
+function toggleSidebar(open) {
+  const sb = document.getElementById("sidebar");
+  if (!sb) return;
+  if (open === undefined) sb.classList.toggle("open");
+  else sb.classList.toggle("open", !!open);
+}
+
 function toast(msg, type = "") {
   const el = document.createElement("div");
   el.className = "toast " + type;
@@ -194,28 +203,44 @@ function setSyncUI() {
     $("user-email").textContent = sessionUser.email || "Signed in";
     $("user-plan").textContent = "Supabase cloud";
     $("auth-btn").textContent = "Sign out";
-    $("setup-hint").style.display = "none";
   } else if (demoUser) {
     badge.classList.remove("cloud");
     $("sync-text").textContent = "Demo profile • this device";
     $("user-email").textContent = demoUser.email;
     $("user-plan").textContent = `Demo — ${demoUser.name}`;
     $("auth-btn").textContent = "Sign out";
-    $("setup-hint").style.display = "";
   } else if (supabase) {
     badge.classList.remove("cloud");
     $("sync-text").textContent = "Supabase connected — sign in";
     $("user-email").textContent = "Not signed in";
     $("user-plan").textContent = "Local mode";
     $("auth-btn").textContent = "Sign in";
-    $("setup-hint").style.display = "";
   } else {
     badge.classList.remove("cloud");
     $("sync-text").textContent = "Local demo";
     $("user-email").textContent = "Not signed in";
     $("user-plan").textContent = "Local mode";
     $("auth-btn").textContent = "Sign in";
-    $("setup-hint").style.display = "";
+  }
+  renderSetupHint();
+}
+
+// Dynamic empty-state hint. Optional `state` override exists for testing.
+function renderSetupHint(state = {}) {
+  const el = $("setup-hint");
+  if (!el) return;
+  const isCloud = state.cloud ?? cloudMode;
+  const hasSb = state.sb ?? !!supabase;
+  const demoEmail = state.demoEmail ?? demoUser?.email;
+  if (isCloud) { el.style.display = "none"; el.innerHTML = ""; return; }
+  el.style.display = "";
+  const openCloudSignin = `document.getElementById('auth-modal').hidden=false;document.getElementById('tab-cloud').click()`;
+  if (hasSb && demoEmail) {
+    el.innerHTML = `<strong>📱 Demo profile</strong> (${esc(demoEmail)}) — notes stay on this device. <button class="btn small primary" onclick="${openCloudSignin}">☁️ Switch to cloud sync</button>`;
+  } else if (hasSb) {
+    el.innerHTML = `<strong>☁️ Cloud sync is ready.</strong> <button class="btn small primary" onclick="${openCloudSignin}">Sign in to sync</button>`;
+  } else {
+    el.innerHTML = `<strong>☁️ Want cloud sync?</strong> Open <b>⚙ Settings</b> → add Supabase → Sign in. <a href="https://github.com/lalibano/cloudpad#readme" target="_blank" rel="noopener">Setup guide</a>`;
   }
 }
 
@@ -397,6 +422,7 @@ function bindEditor() {
     if (show) updatePreview();
   };
 
+  $("save-btn").onclick = async () => { const n = activeNote(); if (!n) return; await persistNote(n); renderEditor(); toast("Saved ✓", "ok"); };
   $("pin-btn").onclick = async () => { const n = activeNote(); if (!n) return; n.pinned = !n.pinned; await persistNote(n); renderEditor(); };
   $("archive-btn").onclick = async () => { const n = activeNote(); if (!n) return; n.archived = !n.archived; if (n.archived) n.pinned = false; await persistNote(n); renderEditor(); toast(n.archived ? "Archived" : "Unarchived"); };
   $("export-btn").onclick = () => {
@@ -449,12 +475,14 @@ function download(name, text) {
 }
 
 // ---------- sidebar events ----------
-function closeSidebarMobile() { $("sidebar").classList.remove("open"); }
+function closeSidebarMobile() { toggleSidebar(false); }
 function bindSidebar() {
   $("new-note-btn").onclick = createNote;
   $("mobile-new").onclick = createNote;
-  $("sidebar-open").onclick = () => $("sidebar").classList.add("open");
-  $("sidebar-close").onclick = closeSidebarMobile;
+  $("sidebar-open").onclick = () => toggleSidebar(true);
+  $("sidebar-close").onclick = () => toggleSidebar(false);
+  const overlay = $("sidebar-overlay");
+  if (overlay) overlay.onclick = () => toggleSidebar(false);
   $("search-input").addEventListener("input", renderList);
   document.addEventListener("keydown", (e) => {
     if (e.key === "/" && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") { e.preventDefault(); $("search-input").focus(); }
@@ -647,5 +675,6 @@ async function doGithubBackup() {
   await fetchNotes();
   // open first note on desktop
   if (window.innerWidth > 900 && filteredNotes().length) activeId = filteredNotes()[0].id;
+  if (window.innerWidth <= 900 && !activeId) toggleSidebar(true); // mobile: start on notes list
   renderAll(); renderEditor();
 })();
