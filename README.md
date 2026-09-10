@@ -18,7 +18,8 @@ Works instantly in **local demo mode** (localStorage), then upgrades to **cloud 
 - Markdown toolbar + 👁 live preview (offline, no dependency)
 - 🌙 Dark / light mode, 📱 mobile responsive
 - ⤓ Export single `.md`, full `.json` backup/restore
-- ☁️ Supabase Auth (email+password, magic link) + per-user RLS + realtime multi-tab sync
+- 📱 Demo accounts (instant sign up/in, hashed password, device-only) + ☁️ Supabase Auth (email+password, magic link) + per-user RLS + realtime multi-tab sync
+- 🔑 Optional `config.js` deploy defaults (`SUPABASE_URL` / `SUPABASE_ANON_KEY`) so visitors can sign in without pasting keys
 
 ## 🚀 Run locally
 
