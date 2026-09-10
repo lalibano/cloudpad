@@ -200,31 +200,49 @@ function getCfg() {
 // CDN can NEVER prevent the app from booting (menu, signup, notes work offline-first).
 let supabaseLibState = "idle"; // idle | loading | ready | failed
 let authListenerWired = false;
-function loadSupabaseLib(timeoutMs = 9000) {
+// Tries sources in order: vendored copy (same server, no CDN needed) -> CDNs -> ESM import.
+function loadScriptOnce(src, ms) {
   return new Promise((resolve) => {
-    if (window.supabase) { supabaseLibState = "ready"; return resolve(true); }
-    if (supabaseLibState === "loading") {
-      const t0 = Date.now();
-      const iv = setInterval(() => {
-        if (window.supabase || supabaseLibState !== "loading" || Date.now() - t0 > timeoutMs) {
-          clearInterval(iv); resolve(!!window.supabase);
-        }
-      }, 200);
-      return;
-    }
-    supabaseLibState = "loading";
     let done = false;
-    const finish = (ok) => { if (done) return; done = true; supabaseLibState = ok ? "ready" : "failed"; resolve(ok); };
+    const finish = (ok) => { if (done) return; done = true; resolve(ok); };
     try {
       const s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
-      s.async = true;
-      s.onload = () => finish(!!window.supabase);
+      s.src = src; s.async = true;
+      s.onload = () => finish(true);
       s.onerror = () => finish(false);
       document.head.appendChild(s);
     } catch (e) { finish(false); return; }
-    setTimeout(() => finish(!!window.supabase), timeoutMs);
+    setTimeout(() => finish(false), ms);
   });
+}
+async function loadSupabaseLib(perSourceMs = 6000) {
+  if (window.supabase) { supabaseLibState = "ready"; return true; }
+  if (supabaseLibState === "loading") {
+    const t0 = Date.now();
+    while (!window.supabase && supabaseLibState === "loading" && Date.now() - t0 < perSourceMs * 4) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return !!window.supabase;
+  }
+  supabaseLibState = "loading";
+  const sources = [
+    "vendor/supabase-js.js?v=5",
+    "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
+    "https://unpkg.com/@supabase/supabase-js@2",
+  ];
+  for (const src of sources) {
+    await loadScriptOnce(src, perSourceMs);
+    if (window.supabase) { supabaseLibState = "ready"; return true; }
+  }
+  try {
+    const mod = await Promise.race([
+      import("https://esm.sh/@supabase/supabase-js@2"),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("esm timeout")), perSourceMs)),
+    ]);
+    if (mod && mod.createClient) { window.supabase = mod; supabaseLibState = "ready"; return true; }
+  } catch (e) { /* ignore */ }
+  supabaseLibState = "failed";
+  return false;
 }
 async function ensureSupabaseClient() {
   const { url, key } = getCfg();
@@ -535,6 +553,7 @@ function closeSidebarMobile() { toggleSidebar(false); }
 function bindSidebar() {
   $("new-note-btn").onclick = createNote;
   $("mobile-new").onclick = createNote;
+  $("sync-status").onclick = async () => { if (cloudMode && sessionUser) return; toast("Retrying cloud connection…"); await upgradeToCloud(); };
   $("sidebar-open").onclick = () => toggleSidebar(true);
   $("sidebar-close").onclick = () => toggleSidebar(false);
   const overlay = $("sidebar-overlay");
@@ -613,16 +632,17 @@ function bindModals() {
   };
   $("demo-signin-btn").onclick = () => doDemoAuth("signin");
   $("demo-signup-btn").onclick = () => doDemoAuth("signup");
-  $("signin-btn").onclick = () => {
-    if (!supabase) { authErr("No Supabase connected. Add URL + key in ⚙ Settings (or ask admin to configure deploy defaults)."); return; }
-    doAuth("signin");
+  const ensureCloudOrWarn = async () => {
+    if (supabase) return true;
+    toast("Loading cloud library…");
+    const ok = await ensureSupabaseClient();
+    if (!ok) authErr("Cloud library couldn't load — your network may be blocking it. Tap again to retry.");
+    return ok;
   };
-  $("signup-btn").onclick = () => {
-    if (!supabase) { authErr("No Supabase connected. Add URL + key in ⚙ Settings (or ask admin to configure deploy defaults)."); return; }
-    doAuth("signup");
-  };
+  $("signin-btn").onclick = async () => { if (!(await ensureCloudOrWarn())) return; doAuth("signin"); };
+  $("signup-btn").onclick = async () => { if (!(await ensureCloudOrWarn())) return; doAuth("signup"); };
   $("magic-btn").onclick = async () => {
-    if (!supabase) return authErr("No Supabase connected — see ⚙ Settings.");
+    if (!(await ensureCloudOrWarn())) return;
     const email = $("auth-email").value.trim();
     if (!email) return authErr("Enter your email first.");
     const { error } = await supabase.auth.signInWithOtp({ email });
