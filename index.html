@@ -21,7 +21,7 @@
           <h1>CloudPad</h1>
           <p id="sync-status" class="sync-status local"><span class="dot"></span><span id="sync-text">Local demo</span></p>
         </div>
-        <button id="sidebar-close" class="icon-btn only-mobile" title="Close">✕</button>
+        <button id="sidebar-close" class="icon-btn only-mobile" title="Close" onclick="toggleSidebar(false)">✕</button>
       </div>
 
       <button id="new-note-btn" class="btn primary block">＋ New note</button>
@@ -57,11 +57,12 @@
         </div>
       </div>
     </aside>
+    <div id="sidebar-overlay" onclick="toggleSidebar(false)"></div>
 
     <!-- ============ EDITOR ============ -->
     <main id="editor-pane">
       <div class="mobile-bar only-mobile">
-        <button id="sidebar-open" class="icon-btn">☰</button>
+        <button id="sidebar-open" class="icon-btn menu-btn" onclick="toggleSidebar(true)">☰ Menu</button>
         <strong>CloudPad</strong>
         <button id="mobile-new" class="icon-btn">＋</button>
       </div>
@@ -71,10 +72,7 @@
         <h2>No note selected</h2>
         <p>Pick a note from the sidebar, or create a new one to start writing.<br />Notes save automatically.</p>
         <button class="btn primary" onclick="document.getElementById('new-note-btn').click()">＋ New note</button>
-        <div class="setup-hint" id="setup-hint">
-          <strong>☁️ Want cloud sync?</strong> Open <b>⚙ Settings</b> → paste your Supabase URL + anon key → Sign in.
-          <a href="https://github.com" target="_blank" rel="noopener" id="readme-link">Setup guide in README.md</a>
-        </div>
+        <div class="setup-hint" id="setup-hint"></div>
       </div>
 
       <div id="editor" class="editor" hidden>
@@ -82,6 +80,7 @@
           <input id="note-title" type="text" placeholder="Untitled" autocomplete="off" />
           <div class="editor-actions">
             <span id="save-state" class="save-state">Saved</span>
+            <button id="save-btn" class="icon-btn" title="Save now (Ctrl+S)">💾</button>
             <button id="pin-btn" class="icon-btn" title="Pin">📌</button>
             <button id="archive-btn" class="icon-btn" title="Archive">📦</button>
             <button id="export-btn" class="icon-btn" title="Export .md">⤓</button>
